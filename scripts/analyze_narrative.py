@@ -144,6 +144,135 @@ CALCULATING = ["图谋", "骗", "算计", "钻空子", "套", "白拿", "白嫖"
                 "退彩礼", "坑", "套路", "设计", "空手套", "占便宜", "分我一半",
                 "让女方还", "帮我还", "让她还"]
 
+# ---------------------------------------------------------------- 语用层（话里有话）
+# 对应 references/implicature-playbook.md
+# 这一组不判断"他在想什么"，只标注"这句话在做什么动作"。
+
+# 元话语标记：为后面的话铺路，本身不承载信息
+METADISCOURSE = ["说实话", "说句实话", "讲真", "讲道理", "不是我说你", "我就直说了",
+                 "直说吧", "按理说", "我个人认为", "先说好", "先说清楚", "丑话说在前",
+                 "有句话不知当讲", "不是我要说", "照我说", "说白了", "坦白说",
+                 "不瞒你说", "老实说"]
+# 否定式缓冲："不是A，而是B" —— A 是顾虑，B 是真意
+NEG_BUFFER = ["不是嫌", "不是不", "不是针对", "不是我说", "不是不想", "不是不愿意",
+              "不是钱的问题", "不是因为钱", "不是因为", "倒不是", "并不是说",
+              "不是说", "不在于", "重点不在", "关键不在"]
+# 弱化评价：用弱词就是在说弱评价
+HEDGED_EVAL = ["还不错", "挺好的", "挺好", "有点意思", "很有想法", "很有特色",
+               "再研究", "研究一下", "考虑考虑", "再说吧", "看情况", "看吧",
+               "有机会", "回头再说", "以后再说", "走流程", "按流程", "再说",
+               "尽量", "争取", "努力", "应该可以", "差不多", "大概没问题",
+               "值得考虑", "可以理解", "有难度", "不太好说", "有点复杂"]
+# 预设触发词：一句话夹带的、未经证明的前提
+PRESUPPOSITION = ["为什么还没", "怎么还没", "为什么没", "为什么不能", "还是",
+                  "又", "连他", "连你", "居然", "竟然", "既然", "你不是",
+                  "你没", "你从来", "你一直", "早就", "早就说", "当初"]
+# 回避/拖延标记：不给日期、不给主体、不给下一步
+AVOIDANCE = ["这个再说", "回头聊", "到时候", "到时候看", "具体情况", "具体看",
+             "再说吧", "再说", "看情况", "有条件", "在推进", "在走", "流程中",
+             "还在研究", "再研究", "研究研究", "研究一下", "需要讨论", "内部讨论",
+             "内部再讨论", "再讨论", "再议", "讨论一下", "上面", "领导",
+             "公司决定", "集体决策", "不是我能定", "不是我定", "不好说",
+             "等通知", "没办法", "也没办法"]
+# 人称滑动：责任摊薄的痕迹
+AGENT_SHIFT = ["我们", "大家", "有人", "上面", "公司", "领导", "团队", "部门",
+               "组织", "有关方面", "相关方"]
+
+
+def analyze_pragmatic(text):
+    """语用层分析：拆'话里有话'。
+
+    只标注言语行为与语言形式，不推断动机。
+    """
+    s = text.strip()
+    n_chars = max(len(s), 1)
+
+    meta = [w for w in METADISCOURSE if w in s]
+    negbuf = [w for w in NEG_BUFFER if w in s]
+    hedged = [w for w in HEDGED_EVAL if w in s]
+    presupp = [w for w in PRESUPPOSITION if w in s]
+    avoid = [w for w in AVOIDANCE if w in s]
+    shift = [w for w in AGENT_SHIFT if w in s]
+
+    # 言外动作推断（基于形式组合，非动机判断）
+    acts = []
+    if avoid:
+        acts.append("回避/拖延")
+    if hedged:
+        acts.append("降温/保留")
+    if negbuf:
+        acts.append("否定式缓冲")
+    if shift and not any(p in s for p in ["我决定", "我负责", "我来"]):
+        acts.append("责任转移")
+    if presupp:
+        acts.append("预设植入")
+
+    # 是否有具体承诺要素：日期、人名、数字
+    has_date = bool(re.search(r"\d+[月日号]|下周|明天|后天|本周|这周|月底|季度|周[一二三四五六日]", s))
+    # 人名检测：要求「姓氏+称谓」或「某某」，避免"方案""对方""方面"等词误命中
+    _surname = "王李张刘陈杨黄赵吴周徐孙马朱胡郭何高林罗郑梁谢宋唐许韩冯邓曹彭曾肖田董袁潘于蒋蔡余杜叶程苏魏吕丁任沈姚卢姜崔钟谭陆汪范金石廖贾夏韦付方白邹孟熊秦邱江尹薛闫段雷侯龙史陶黎贺顾毛郝龚邵万钱严覃武戴莫孔向汤"
+    has_owner = bool(re.search(f"[{_surname}](总|经理|老师|主任|律师|总监|主管|工|先生|女士|哥|姐|某某|某)", s)) or bool(re.search(r"某某|哪位|谁负责|谁定", s))
+    has_number = bool(re.search(r"\d+", s))
+
+    m = {
+        "_raw": s,
+        "chars": len(s),
+        "metadiscourse": meta,
+        "neg_buffer": negbuf,
+        "hedged_eval": hedged,
+        "presupposition": presupp,
+        "avoidance": avoid,
+        "agent_shift": shift,
+        "inferred_acts": acts,
+        "has_date": has_date,
+        "has_owner": has_owner,
+        "has_number": has_number,
+        "commitment_score": int(has_date) + int(has_owner) + int(has_number),
+    }
+    return m
+
+
+def interpret_pragmatic(m):
+    """把语用信号转成可读的观察。只用'看起来''可能'，不下断言。"""
+    out = []
+
+    def add(dim, signal, reading):
+        out.append({"dim": dim, "signal": signal, "reading": reading})
+
+    if m["metadiscourse"]:
+        add("元话语", "出现 " + "、".join(m["metadiscourse"]),
+            "这类词是为后面的话铺路 —— 往后一到两句通常才是真正想说的内容")
+
+    if m["neg_buffer"]:
+        add("缓冲", "出现 " + "、".join(m["neg_buffer"]),
+            "否定式缓冲：被否掉的那半句往往是对方的顾虑，后半句才是真实障碍")
+
+    if m["hedged_eval"]:
+        add("强度", "出现弱化词 " + "、".join(m["hedged_eval"]),
+            "语用标尺上的弱词 —— 弱词通常对应弱评价，不宜按字面理解")
+
+    if m["presupposition"]:
+        add("预设", "出现预设触发 " + "、".join(m["presupposition"]),
+            "这句话默认了某个没被证明的前提，摊开它再判断整句话是否成立")
+
+    if m["avoidance"]:
+        add("回避", "出现 " + "、".join(m["avoidance"]),
+            "没有具体日期、主体或下一步 —— 这是拖延/回避的典型形态")
+
+    if m["agent_shift"]:
+        add("主体", "出现 " + "、".join(m["agent_shift"]),
+            "责任被摊到集体或在场外的主体上，追责时通常无人认领")
+
+    # 仅当句子确实在做表态/承诺时，才提示承诺要素缺失
+    _commit_verbs = ["会", "将", "尽量", "争取", "努力", "研究", "推进", "安排",
+                     "处理", "解决", "考虑", "商量", "讨论", "协调", "落实", "跟进"]
+    if (m["commitment_score"] == 0 and m["chars"] >= 10
+            and any(v in m["_raw"] for v in _commit_verbs)):
+        add("承诺", "全句无日期、无人名、无数字",
+            "承诺三要素为零 —— 这类表态通常不产生任何可执行义务")
+
+    return out
+
 
 def analyze_short(text):
     """短文本（口述/连麦/聊天）专用分析。"""
@@ -536,6 +665,8 @@ def main():
     ap.add_argument("--json", action="store_true", help="输出 JSON")
     ap.add_argument("--short", action="store_true",
                     help="短文本/口述模式（连麦、访谈、聊天记录等一两句陈述）")
+    ap.add_argument("--implicature", action="store_true",
+                    help="语用模式：拆'话里有话'（言外动作、预设、回避、语用标尺）")
     args = ap.parse_args()
 
     if args.path == "-":
@@ -551,6 +682,54 @@ def main():
     if not text.strip():
         print("输入为空。", file=sys.stderr)
         sys.exit(1)
+
+    if args.implicature:
+        m = analyze_pragmatic(text)
+        findings = interpret_pragmatic(m)
+        if args.json:
+            _pub = {k: v for k, v in m.items() if not k.startswith("_")}
+            print(json.dumps({"mode": "implicature", "metrics": _pub,
+                              "findings": findings}, ensure_ascii=False, indent=2))
+        else:
+            print("=" * 58)
+            print("语用层分析 · 拆「话里有话」")
+            print("=" * 58)
+            print(f"原话（{m['chars']} 字）：{text.strip()}")
+            print("")
+            print("— 形式信号 " + "-" * 45)
+            def fmt(lst):
+                return "、".join(lst) if lst else "无"
+            print(f"  元话语标记      {fmt(m['metadiscourse'])}")
+            print(f"  否定式缓冲      {fmt(m['neg_buffer'])}")
+            print(f"  弱化评价词      {fmt(m['hedged_eval'])}")
+            print(f"  预设触发词      {fmt(m['presupposition'])}")
+            print(f"  回避/拖延标记    {fmt(m['avoidance'])}")
+            print(f"  人称滑动        {fmt(m['agent_shift'])}")
+            print("")
+            print("— 推断的言外动作 " + "-" * 40)
+            if m["inferred_acts"]:
+                for a in m["inferred_acts"]:
+                    print(f"  · {a}")
+            else:
+                print("  未检出明显的言外动作，可能是一句字面表达")
+            print("")
+            print("— 承诺要素 " + "-" * 45)
+            print(f"  日期 {'有' if m['has_date'] else '无'}"
+                  f"　人名 {'有' if m['has_owner'] else '无'}"
+                  f"　数字 {'有' if m['has_number'] else '无'}"
+                  f"　（{m['commitment_score']}/3）")
+            print("")
+            print("— 观察项 " + "-" * 46)
+            if not findings:
+                print("  未触发 —— 这句话可能是字面表达，不必过度解读。")
+            for f in findings:
+                print(f"  [{f['dim']}] {f['signal']}")
+                print(f"      → {f['reading']}")
+            print("")
+            print("—" * 58)
+            print("提示：以上标注的是语言动作，不是对方的动机。")
+            print("推断依赖语境，纯文本场景有效；若有语气/表情，可能推翻上述判断。")
+        return
 
     if args.short:
         m = analyze_short(text)
