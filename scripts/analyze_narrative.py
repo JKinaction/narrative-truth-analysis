@@ -164,9 +164,13 @@ HEDGED_EVAL = ["还不错", "挺好的", "挺好", "有点意思", "很有想法
                "尽量", "争取", "努力", "应该可以", "差不多", "大概没问题",
                "值得考虑", "可以理解", "有难度", "不太好说", "有点复杂"]
 # 预设触发词：一句话夹带的、未经证明的前提
-PRESUPPOSITION = ["为什么还没", "怎么还没", "为什么没", "为什么不能", "还是",
+# 注意：「还是」单独出现多为"仍然是"（正常用法），
+# 只有后接负面评价（还是有/还是没/还是不行）才构成预设触发。
+PRESUPPOSITION = ["为什么还没", "怎么还没", "为什么没", "为什么不能",
                   "又", "连他", "连你", "居然", "竟然", "既然", "你不是",
                   "你没", "你从来", "你一直", "早就", "早就说", "当初"]
+# 「还是」的严格判定
+_PRESUP_STILL = re.compile(r"还是\s*(?:有|没|不|差点|老样子|这样|那个样|不行|不到位)")
 # 回避/拖延标记：不给日期、不给主体、不给下一步
 AVOIDANCE = ["这个再说", "回头聊", "到时候", "到时候看", "具体情况", "具体看",
              "再说吧", "再说", "看情况", "有条件", "在推进", "在走", "流程中",
@@ -175,8 +179,16 @@ AVOIDANCE = ["这个再说", "回头聊", "到时候", "到时候看", "具体�
              "公司决定", "集体决策", "不是我能定", "不是我定", "不好说",
              "等通知", "没办法", "也没办法"]
 # 人称滑动：责任摊薄的痕迹
-AGENT_SHIFT = ["我们", "大家", "有人", "上面", "公司", "领导", "团队", "部门",
-               "组织", "有关方面", "相关方"]
+# 强转移：本身即指向不可追责的主体
+AGENT_SHIFT_STRONG = ["上面", "领导", "组织", "有关方面", "相关方", "集体决策",
+                      "公司决定", "内部", "上级", "总部"]
+# 弱转移：需与决策/回避动词搭配，才构成责任摊薄
+AGENT_SHIFT_WEAK = ["我们", "大家", "有人", "团队", "部门", "公司"]
+# 与弱转移搭配才算摊薄的动词
+_DECISION_VERBS = ["决定", "要求", "规定", "安排", "审批", "认定", "批准", "同意",
+                   "讨论", "研究", "商量", "定", "拍板", "把关", "负责"]
+# 兼容旧名（供 analyze_pragmatic 内部使用）
+AGENT_SHIFT = AGENT_SHIFT_STRONG + AGENT_SHIFT_WEAK
 
 
 def analyze_pragmatic(text):
@@ -191,8 +203,15 @@ def analyze_pragmatic(text):
     negbuf = [w for w in NEG_BUFFER if w in s]
     hedged = [w for w in HEDGED_EVAL if w in s]
     presupp = [w for w in PRESUPPOSITION if w in s]
+    if _PRESUP_STILL.search(s):
+        presupp.append("还是（后接负面评价）")
     avoid = [w for w in AVOIDANCE if w in s]
-    shift = [w for w in AGENT_SHIFT if w in s]
+
+    # 人称滑动：强主体直接命中；弱主体须与决策动词搭配
+    shift = [w for w in AGENT_SHIFT_STRONG if w in s]
+    has_decision = any(v in s for v in _DECISION_VERBS)
+    if has_decision:
+        shift += [w for w in AGENT_SHIFT_WEAK if w in s]
 
     # 言外动作推断（基于形式组合，非动机判断）
     acts = []
@@ -206,6 +225,8 @@ def analyze_pragmatic(text):
         acts.append("责任转移")
     if presupp:
         acts.append("预设植入")
+    if meta and not avoid:
+        acts.append("免责铺垫")
 
     # 是否有具体承诺要素：日期、人名、数字
     has_date = bool(re.search(r"\d+[月日号]|下周|明天|后天|本周|这周|月底|季度|周[一二三四五六日]", s))
