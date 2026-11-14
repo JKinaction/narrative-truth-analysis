@@ -697,8 +697,14 @@ def main():
             with open(args.path, "r", encoding="utf-8") as f:
                 text = f.read()
         except FileNotFoundError:
-            print(f"找不到文件: {args.path}", file=sys.stderr)
-            sys.exit(1)
+            # 语用/短文本模式允许直接传一句话，不必先存文件
+            if args.implicature or args.short:
+                text = args.path
+            else:
+                print(f"找不到文件: {args.path}", file=sys.stderr)
+                print("（若想直接分析一句话，请加 --short 或 --implicature）",
+                      file=sys.stderr)
+                sys.exit(1)
 
     if not text.strip():
         print("输入为空。", file=sys.stderr)
